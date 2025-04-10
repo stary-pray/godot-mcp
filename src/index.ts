@@ -170,7 +170,8 @@ class GodotServer {
     'host': 'host',
     'port': 'port',
     'action': 'action',
-    'parameters': 'parameters'
+    'parameters': 'parameters',
+    'pause_game': 'pauseGame'
   };
 
   /**
@@ -1030,6 +1031,30 @@ class GodotServer {
             },
           },
         },
+        {
+          name: 'mcp_godot_get_game_state',
+          description: '获取当前游戏的详细状态',
+          parameters: {
+            type: 'object',
+            properties: {
+              host: {
+                type: 'string',
+                description: '运行中 Godot 实例的主机名或 IP',
+                default: 'localhost',
+              },
+              port: {
+                type: 'integer',
+                description: '运行中 Godot 实例的 WebSocket 端口',
+                default: 9080,
+              },
+              pauseGame: {
+                type: 'boolean',
+                description: '如果为 true，在收集状态前暂停游戏',
+                default: false,
+              },
+            },
+          },
+        },
       ],
     }));
 
@@ -1067,6 +1092,8 @@ class GodotServer {
           return await this.handleUpdateProjectUids(request.params.arguments);
         case 'mcp_godot_send_runtime_command':
           return await this.handleSendRuntimeCommand(request.params.arguments);
+        case 'mcp_godot_get_game_state':
+          return await this.handleGetGameState(request.params.arguments);
         default:
           throw new McpError(
             ErrorCode.MethodNotFound,
@@ -2314,6 +2341,107 @@ class GodotServer {
     } catch (error: any) {
       return this.createErrorResponse(
         `发送运行时命令失败: ${error?.message || '未知错误'}`,
+        [
+          '确认 yuki-godot 实例正在运行',
+          '检查主机名和端口是否正确',
+          '确认 WebSocket 服务器已启动'
+        ]
+      );
+    }
+  }
+
+  /**
+   * Handle the get_game_state tool
+   */
+  private async handleGetGameState(args: any) {
+    // Normalize parameters to camelCase
+    args = this.normalizeParameters(args);
+    
+    try {
+      // 创建 WebSocket 客户端
+      const client = new WebSocketClient(
+        args.host || 'localhost',
+        args.port || 9080
+      );
+
+      // 如果需要，先暂停游戏
+      if (args.pauseGame) {
+        await client.sendCommand('toggle_pause');
+      }
+
+      // 发送命令并等待响应
+      const response = await client.sendCommand('get_game_state', {
+        pause_game: args.pauseGame || false
+      });
+
+      // 检查响应状态
+      if (response.status === 'success') {
+        // 格式化游戏状态数据以便于阅读
+        const gameState = response.state;
+        const formattedState = {
+          游戏状态: {
+            是否暂停: gameState.is_paused,
+            当前天数: gameState.current_day,
+            项目健康度: gameState.project_health,
+          },
+          玩家状态: {
+            生命值: `${gameState.player.hp}/${gameState.player.max_hp}`,
+            格挡值: gameState.player.block,
+            能量: `${gameState.player.energy}/${gameState.player.max_energy}`,
+            精力: `${gameState.player.stamina}/${gameState.player.max_stamina}`,
+            压力值: gameState.player.stress,
+            状态效果: gameState.player.buffs_debuffs.map((buff: any) => 
+              `${buff.name} (${buff.stacks}层)`
+            ),
+          },
+          手牌信息: {
+            手牌数量: gameState.hand.length,
+            抽牌堆: gameState.draw_pile_count,
+            弃牌堆: gameState.discard_pile_count,
+            消耗堆: gameState.exhaust_pile_count,
+            当前选中: gameState.selected_card_entity_id,
+            目标选择模式: gameState.is_targeting,
+          },
+          敌人信息: gameState.enemies.map((enemy: any) => ({
+            名称: enemy.name,
+            生命值: `${enemy.hp}/${enemy.max_hp}`,
+            格挡值: enemy.block,
+            意图: {
+              类型: enemy.intent.type,
+              数值: enemy.intent.value,
+              目标: enemy.intent.target_id,
+              冷却: enemy.intent.cooldown_remaining,
+            },
+            状态效果: enemy.buffs_debuffs,
+          })),
+        };
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `游戏状态获取成功：\n${JSON.stringify(formattedState, null, 2)}`,
+            },
+          ],
+        };
+      } else if (response.status === 'error') {
+        return this.createErrorResponse(
+          `Godot 运行时错误 (指令: 'get_game_state'): ${response.message || '未知错误'}`,
+          [
+            '检查发送的参数是否正确',
+            '确认 yuki-godot 中的游戏状态是否允许此操作',
+            '查看 README_Websocket_Interface.md 了解支持的指令'
+          ]
+        );
+      } else {
+        return this.createErrorResponse(
+          `从 Godot 收到非预期的响应格式: ${JSON.stringify(response)}`,
+          ['检查 yuki-godot NetworkManager 的响应格式']
+        );
+      }
+    } catch (error: any) {
+      return this.createErrorResponse(
+        `获取游戏状态失败: ${error?.message || '未知错误'}`,
         [
           '确认 yuki-godot 实例正在运行',
           '检查主机名和端口是否正确',

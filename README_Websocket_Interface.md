@@ -68,6 +68,7 @@
 | `discard_card`      | 请求弃掉指定的手牌。                     | `card_id`: String (要弃置的卡牌的唯一标识符)           | :white_check_mark: 可用 (受游戏内冷却时间 `8s` 限制)。`card_id` 同上。 |
 | `select_target`     | 模拟玩家选择一个目标实体（通常是敌人）。 | `target_id`: String (目标实体的唯一标识符)             | :white_check_mark: 可用。`target_id` 可为实体的 `entity_id` (数字) 或 `character_data.id` (字符串)。 |
 | `select_reward`     | 在奖励界面选择一个奖励。                 | `reward_id`: String (奖励选项的唯一标识符，可能是卡牌 ID) | :white_check_mark: 可用。`reward_id` 的具体格式待定（可能是卡牌 ID 或奖励槽位索引）。 |
+| `get_game_state`    | 获取当前游戏的详细状态。                 | `pause_game`: Boolean (可选，默认 false) - 如果为 true，在收集状态前暂停游戏 | :white_check_mark: 可用。返回包含游戏状态的 JSON 对象。 |
 
 **关于实体 ID (`card_id`, `target_id`, `reward_id`):**
 
@@ -91,3 +92,92 @@
 *   查询游戏状态（当前能量、手牌列表、敌人状态等）。
 *   更复杂的卡牌交互指令。
 *   控制游戏设置或流程的指令。
+
+### 7. `get_game_state` 响应结构
+
+`get_game_state` 命令的成功响应包含一个详细的游戏状态对象：
+
+```json
+{
+  "status": "success",
+  "state": {
+    "is_paused": true,
+    "current_day": 2,
+    "project_health": 95,
+    "player": {
+      "entity_id": 1,
+      "hp": 75,
+      "max_hp": 80,
+      "block": 5,
+      "energy": 2.8,
+      "max_energy": 3,
+      "stamina": 88.5,
+      "max_stamina": 100.0,
+      "stress": 15,
+      "buffs_debuffs": [
+        {"id": "strength", "name": "力量", "stacks": 2}
+      ]
+    },
+    "hand": [
+      {
+        "entity_id": 101,
+        "instance_id": "...",
+        "card_data_id": "strike",
+        "name": "打击",
+        "cost": 1,
+        "type": "ATTACK",
+        "description": "造成 6 点伤害。",
+        "runtime_values": {"dmg_amount": 6, "block_amount": 0},
+        "is_playable": true
+      }
+    ],
+    "draw_pile_count": 12,
+    "discard_pile_count": 4,
+    "exhaust_pile_count": 0,
+    "selected_card_entity_id": null,
+    "is_targeting": false,
+    "targeting_source_card_entity_id": null,
+    "valid_target_entity_ids": [],
+    "enemies": [
+      {
+        "entity_id": 201,
+        "name": "Slime",
+        "hp": 18,
+        "max_hp": 20,
+        "block": 0,
+        "intent": {
+          "type": "ATTACK",
+          "value": 5,
+          "target_id": 1,
+          "cooldown_remaining": 3.2
+        },
+        "buffs_debuffs": []
+      }
+    ]
+  }
+}
+```
+
+**状态字段说明:**
+
+*   `is_paused`: 游戏是否处于暂停状态
+*   `current_day`: 当前 Sprint 的天数
+*   `project_health`: 当前项目健康度
+*   `player`: 玩家状态信息
+    *   `entity_id`: 玩家实体的唯一 ID
+    *   `hp`, `max_hp`: 当前/最大生命值
+    *   `block`: 当前格挡值
+    *   `energy`, `max_energy`: 当前/最大能量值
+    *   `stamina`, `max_stamina`: 当前/最大精力值
+    *   `stress`: 当前压力值
+    *   `buffs_debuffs`: 状态效果列表
+*   `hand`: 手牌列表
+    *   每张卡牌包含：`entity_id`, `instance_id`, `card_data_id`, `name`, `cost`, `type`, `description`, `runtime_values`, `is_playable`
+*   `draw_pile_count`, `discard_pile_count`, `exhaust_pile_count`: 各牌堆的卡牌数量
+*   `selected_card_entity_id`: 当前选中的卡牌实体 ID
+*   `is_targeting`: 是否处于目标选择模式
+*   `targeting_source_card_entity_id`: 发起目标选择的卡牌实体 ID
+*   `valid_target_entity_ids`: 当前可选的目标实体 ID 列表
+*   `enemies`: 敌人列表
+    *   每个敌人包含：`entity_id`, `name`, `hp`, `max_hp`, `block`, `intent`, `buffs_debuffs`
+    *   `intent` 包含：`type`, `value`, `target_id`, `cooldown_remaining`
