@@ -1001,7 +1001,7 @@ class GodotServer {
         {
           name: 'mcp_godot_send_runtime_command',
           description: '向运行中的 Godot 游戏实例发送运行时控制指令',
-          parameters: {
+          inputSchema: {
             type: 'object',
             required: ['action'],
             properties: {
@@ -1034,7 +1034,7 @@ class GodotServer {
         {
           name: 'mcp_godot_get_game_state',
           description: '获取当前游戏的详细状态',
-          parameters: {
+          inputSchema: {
             type: 'object',
             properties: {
               host: {
