@@ -13,6 +13,7 @@ import { existsSync, readdirSync, mkdirSync } from 'fs';
 import { spawn } from 'child_process';
 import { promisify } from 'util';
 import { exec } from 'child_process';
+import WebSocket from 'ws';
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -60,6 +61,82 @@ interface OperationParams {
 }
 
 /**
+ * WebSocket client for communicating with Godot runtime
+ */
+class WebSocketClient {
+  private ws: WebSocket | null = null;
+  private host: string;
+  private port: number;
+
+  constructor(host: string = 'localhost', port: number = 9080) {
+    this.host = host;
+    this.port = port;
+  }
+
+  /**
+   * Send a command to the Godot runtime and wait for response
+   */
+  public async sendCommand(action: string, parameters: any = {}): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const wsUrl = `ws://${this.host}:${this.port}`;
+      this.ws = new WebSocket(wsUrl);
+      let responseReceived = false;
+
+      // 设置超时
+      const timeout = setTimeout(() => {
+        if (!responseReceived) {
+          this.ws?.terminate();
+          reject(new Error(`连接到 ${wsUrl} 的 WebSocket 请求超时 (5秒)`));
+        }
+      }, 5000);
+
+      this.ws.on('open', () => {
+        // 构建消息体
+        const messageBody = { action, parameters: parameters || {} };
+        const message = JSON.stringify(messageBody);
+        this.ws?.send(message);
+      });
+
+      this.ws.on('message', (data) => {
+        responseReceived = true;
+        clearTimeout(timeout);
+        try {
+          const response = JSON.parse(data.toString());
+          this.ws?.close();
+          resolve(response);
+        } catch (error) {
+          this.ws?.close();
+          reject(new Error(`解析来自 Godot 的 JSON 响应失败: ${data.toString()}`));
+        }
+      });
+
+      this.ws.on('error', (error) => {
+        clearTimeout(timeout);
+        this.ws?.close();
+        reject(new Error(`WebSocket 错误: ${error.message}`));
+      });
+
+      this.ws.on('close', (code, reason) => {
+        if (!responseReceived) {
+          clearTimeout(timeout);
+          reject(new Error(`WebSocket 连接在收到响应前意外关闭 (代码: ${code})`));
+        }
+      });
+    });
+  }
+
+  /**
+   * Close the WebSocket connection
+   */
+  public close() {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+}
+
+/**
  * Main server class for the Godot MCP server
  */
 class GodotServer {
@@ -90,6 +167,10 @@ class GodotServer {
     'directory': 'directory',
     'recursive': 'recursive',
     'scene': 'scene',
+    'host': 'host',
+    'port': 'port',
+    'action': 'action',
+    'parameters': 'parameters'
   };
 
   /**
@@ -916,6 +997,39 @@ class GodotServer {
             required: ['projectPath'],
           },
         },
+        {
+          name: 'mcp_godot_send_runtime_command',
+          description: '向运行中的 Godot 游戏实例发送运行时控制指令',
+          parameters: {
+            type: 'object',
+            required: ['action'],
+            properties: {
+              projectPath: {
+                type: 'string',
+                description: '相关 yuki-godot 项目的路径，用于提供上下文',
+              },
+              host: {
+                type: 'string',
+                description: '运行中 Godot 实例的主机名或 IP',
+                default: 'localhost',
+              },
+              port: {
+                type: 'integer',
+                description: '运行中 Godot 实例的 WebSocket 端口',
+                default: 9080,
+              },
+              action: {
+                type: 'string',
+                description: '要发送的操作指令 (参见 yuki-godot WebSocket 接口文档)',
+              },
+              parameters: {
+                type: 'object',
+                description: '包含操作所需参数的 JSON 对象',
+                additionalProperties: true,
+              },
+            },
+          },
+        },
       ],
     }));
 
@@ -951,6 +1065,8 @@ class GodotServer {
           return await this.handleGetUid(request.params.arguments);
         case 'update_project_uids':
           return await this.handleUpdateProjectUids(request.params.arguments);
+        case 'mcp_godot_send_runtime_command':
+          return await this.handleSendRuntimeCommand(request.params.arguments);
         default:
           throw new McpError(
             ErrorCode.MethodNotFound,
@@ -2141,6 +2257,67 @@ class GodotServer {
           'Ensure Godot is installed correctly',
           'Check if the GODOT_PATH environment variable is set correctly',
           'Verify the project path is accessible',
+        ]
+      );
+    }
+  }
+
+  /**
+   * Handle the send_runtime_command tool
+   */
+  private async handleSendRuntimeCommand(args: any) {
+    // Normalize parameters to camelCase
+    args = this.normalizeParameters(args);
+    
+    if (!args.action) {
+      return this.createErrorResponse(
+        '缺少必需的参数',
+        ['必须提供 action 参数']
+      );
+    }
+
+    try {
+      // 创建 WebSocket 客户端
+      const client = new WebSocketClient(
+        args.host || 'localhost',
+        args.port || 9080
+      );
+
+      // 发送命令并等待响应
+      const response = await client.sendCommand(args.action, args.parameters);
+
+      // 检查响应状态
+      if (response.status === 'success') {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `运行时命令 '${args.action}' 已成功执行。`,
+            },
+          ],
+        };
+      } else if (response.status === 'error') {
+        return this.createErrorResponse(
+          `Godot 运行时错误 (指令: '${args.action}'): ${response.message || '未知错误'}`,
+          [
+            '检查发送的参数是否正确',
+            '确认 yuki-godot 中的游戏状态是否允许此操作',
+            '查看 README_Websocket_Interface.md 了解支持的指令'
+          ]
+        );
+      } else {
+        return this.createErrorResponse(
+          `从 Godot 收到非预期的响应格式: ${JSON.stringify(response)}`,
+          ['检查 yuki-godot NetworkManager 的响应格式']
+        );
+      }
+    } catch (error: any) {
+      return this.createErrorResponse(
+        `发送运行时命令失败: ${error?.message || '未知错误'}`,
+        [
+          '确认 yuki-godot 实例正在运行',
+          '检查主机名和端口是否正确',
+          '确认 WebSocket 服务器已启动'
         ]
       );
     }
