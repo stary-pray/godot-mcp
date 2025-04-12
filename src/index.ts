@@ -171,7 +171,9 @@ class GodotServer {
     'port': 'port',
     'action': 'action',
     'parameters': 'parameters',
-    'pause_game': 'pauseGame'
+    'pause_game': 'pauseGame',
+    'start_node_path': 'startNodePath',
+    'max_depth': 'maxDepth'
   };
 
   /**
@@ -1055,6 +1057,34 @@ class GodotServer {
             },
           },
         },
+        {
+          name: 'get_scene_tree',
+          description: 'Retrieves the structured scene tree data from the running Godot instance.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              host: {
+                type: 'string',
+                description: 'Hostname or IP of the running Godot instance',
+                default: 'localhost',
+              },
+              port: {
+                type: 'integer',
+                description: 'WebSocket port of the running Godot instance',
+                default: 9080,
+              },
+              start_node_path: {
+                type: 'string',
+                description: 'Optional: NodePath to start the tree dump from (e.g., "CharacterArea"). Defaults to root.',
+              },
+              max_depth: {
+                type: 'integer',
+                description: 'Optional: Maximum depth to traverse. -1 for unlimited.',
+                default: -1,
+              },
+            },
+          },
+        },
       ],
     }));
 
@@ -1094,6 +1124,8 @@ class GodotServer {
           return await this.handleSendRuntimeCommand(request.params.arguments);
         case 'mcp_godot_get_game_state':
           return await this.handleGetGameState(request.params.arguments);
+        case 'get_scene_tree':
+          return await this.handleGetSceneTree(request.params.arguments);
         default:
           throw new McpError(
             ErrorCode.MethodNotFound,
@@ -2444,6 +2476,77 @@ class GodotServer {
           '确认 yuki-godot 实例正在运行',
           '检查主机名和端口是否正确',
           '确认 WebSocket 服务器已启动'
+        ]
+      );
+    }
+  }
+
+  /**
+   * Handle the get_scene_tree tool
+   */
+  private async handleGetSceneTree(args: any) {
+    // Normalize parameters to camelCase
+    args = this.normalizeParameters(args);
+
+    try {
+      // Create WebSocket client
+      const client = new WebSocketClient(
+        args.host || 'localhost',
+        args.port || 9080
+      );
+
+      // Prepare parameters for Godot
+      // Ensure we use snake_case for parameters sent to Godot
+      const godotParams: any = {};
+      if (args.startNodePath !== undefined) {
+        godotParams.start_node_path = args.startNodePath;
+      }
+      if (args.maxDepth !== undefined) {
+        godotParams.max_depth = args.maxDepth;
+      }
+
+      // Send command and wait for response
+      const response = await client.sendCommand('get_scene_tree', godotParams);
+
+      // Check response status
+      if (response.status === 'success') {
+        // Extract the tree data from response.data and format the success response
+        return {
+          content: [
+            {
+              type: 'text',
+              // Stringify the entire structured data for the AI
+              text: JSON.stringify({
+                status: "success",
+                message: "Scene tree data retrieved.",
+                // Embed the actual tree data received from Godot
+                sceneTree: response.data
+              }, null, 2)
+            },
+          ],
+        };
+      } else if (response.status === 'error') {
+        return this.createErrorResponse(
+          `Failed to get scene tree from Godot: ${response.message || 'Unknown error'}`,
+          [
+            'Check if the parameters are correct',
+            'Verify that the Godot instance supports the get_scene_tree command',
+            'Check if the specified node path exists in the scene'
+          ]
+        );
+      } else {
+        return this.createErrorResponse(
+          `Received unexpected response format from Godot: ${JSON.stringify(response)}`,
+          ['Check the response format in the Godot NetworkManager']
+        );
+      }
+    } catch (error: any) {
+      return this.createErrorResponse(
+        `Failed to get scene tree: ${error?.message || 'Unknown error'}`,
+        [
+          'Ensure the Godot instance is running',
+          'Check if the hostname and port are correct',
+          'Verify that the WebSocket server is started'
         ]
       );
     }
