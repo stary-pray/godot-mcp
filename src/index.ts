@@ -2315,11 +2315,44 @@ class GodotServer {
 
       // 检查响应状态
       if (response.status === 'success') {
+        try {
+          // 命令执行成功后，获取游戏状态
+          const gameStateResponse = await client.sendCommand('get_game_state', {
+            pause_game: false
+          });
+
+          if (gameStateResponse.status === 'success') {
+            // 直接传递游戏返回的完整响应
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    status: "success",
+                    message: `运行时命令 '${args.action}' 已成功执行`,
+                    command_response: response,  // 原始命令的响应
+                    game_state: gameStateResponse  // 完整的游戏状态响应
+                  }, null, 2)
+                },
+              ],
+            };
+          }
+        } catch (stateError) {
+          // 如果获取游戏状态失败，仍然返回成功消息
+          this.logDebug(`命令执行成功，但获取游戏状态失败: ${stateError || '未知错误'}`);
+        }
+
+        // 如果无法获取游戏状态，返回默认成功消息
         return {
           content: [
             {
               type: 'text',
-              text: `运行时命令 '${args.action}' 已成功执行。`,
+              text: JSON.stringify({
+                status: "success",
+                message: `运行时命令 '${args.action}' 已成功执行`,
+                command_response: response,  // 原始命令的响应
+                game_state: null  // 游戏状态获取失败
+              }, null, 2)
             },
           ],
         };
@@ -2376,13 +2409,16 @@ class GodotServer {
 
       // 检查响应状态
       if (response.status === 'success') {
-        const gameState = response.state;
-
+        // 直接传递游戏返回的数据，不做特定字段的假设
         return {
           content: [
             {
               type: 'text',
-              text: `游戏状态获取成功：\n${JSON.stringify(gameState, null, 2)}`,
+              text: JSON.stringify({
+                status: "success",
+                message: "游戏状态获取成功",
+                data: response  // 返回完整的响应，而不仅仅是 response.state
+              }, null, 2)
             },
           ],
         };
