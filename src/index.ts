@@ -1058,6 +1058,46 @@ class GodotServer {
           },
         },
         {
+          name: 'get_available_actions',
+          description: 'Retrieves a list of currently available player actions from the running Godot game instance, including valid parameters where applicable (e.g., playable card IDs, valid target IDs).',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              host: {
+                type: 'string',
+                description: 'Hostname or IP of the running Godot instance',
+                default: 'localhost',
+              },
+              port: {
+                type: 'integer',
+                description: 'WebSocket port of the running Godot instance',
+                default: 9080,
+              },
+            },
+            required: [],
+          },
+        },
+        {
+          name: 'cancel_targeting',
+          description: 'Cancels the current target selection mode in the Godot game.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              host: {
+                type: 'string',
+                description: 'Hostname or IP of the running Godot instance',
+                default: 'localhost',
+              },
+              port: {
+                type: 'integer',
+                description: 'WebSocket port of the running Godot instance',
+                default: 9080,
+              },
+            },
+            required: [],
+          },
+        },
+        {
           name: 'get_scene_tree',
           description: 'Retrieves the structured scene tree data from the running Godot instance.',
           inputSchema: {
@@ -1126,6 +1166,10 @@ class GodotServer {
           return await this.handleGetGameState(request.params.arguments);
         case 'get_scene_tree':
           return await this.handleGetSceneTree(request.params.arguments);
+        case 'get_available_actions':
+          return await this.handleGetAvailableActions(request.params.arguments);
+        case 'cancel_targeting':
+          return await this.handleCancelTargeting(request.params.arguments);
         default:
           throw new McpError(
             ErrorCode.MethodNotFound,
@@ -2543,6 +2587,118 @@ class GodotServer {
     } catch (error: any) {
       return this.createErrorResponse(
         `Failed to get scene tree: ${error?.message || 'Unknown error'}`,
+        [
+          'Ensure the Godot instance is running',
+          'Check if the hostname and port are correct',
+          'Verify that the WebSocket server is started'
+        ]
+      );
+    }
+  }
+
+  /**
+   * Handle the get_available_actions tool
+   */
+  private async handleGetAvailableActions(args: any) {
+    // Normalize parameters to camelCase
+    args = this.normalizeParameters(args);
+
+    try {
+      // Create WebSocket client
+      const client = new WebSocketClient(
+        args.host || 'localhost',
+        args.port || 9080
+      );
+
+      // Send command and wait for response
+      const response = await client.sendCommand('get_available_actions', {});
+
+      // Check response status
+      if (response.status === 'success') {
+        // Format the entire response for the AI
+        return {
+          content: [
+            {
+              type: 'text',
+              // Stringify the entire structured data for the AI
+              text: JSON.stringify(response, null, 2)
+            },
+          ],
+        };
+      } else if (response.status === 'error') {
+        return this.createErrorResponse(
+          `Failed to get available actions from Godot: ${response.message || 'Unknown error'}`,
+          [
+            'Verify that the Godot instance supports the get_available_actions command',
+            'Check the current game state to ensure actions can be retrieved'
+          ]
+        );
+      } else {
+        return this.createErrorResponse(
+          `Received unexpected response format from Godot: ${JSON.stringify(response)}`,
+          ['Check the response format in the Godot NetworkManager']
+        );
+      }
+    } catch (error: any) {
+      return this.createErrorResponse(
+        `Failed to get available actions: ${error?.message || 'Unknown error'}`,
+        [
+          'Ensure the Godot instance is running',
+          'Check if the hostname and port are correct',
+          'Verify that the WebSocket server is started'
+        ]
+      );
+    }
+  }
+
+  /**
+   * Handle the cancel_targeting tool
+   */
+  private async handleCancelTargeting(args: any) {
+    // Normalize parameters to camelCase
+    args = this.normalizeParameters(args);
+
+    try {
+      // Create WebSocket client
+      const client = new WebSocketClient(
+        args.host || 'localhost',
+        args.port || 9080
+      );
+
+      // Send command and wait for response
+      const response = await client.sendCommand('cancel_targeting', {});
+
+      // Check response status
+      if (response.status === 'success') {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                status: "success",
+                message: "Targeting mode cancelled successfully.",
+                response: response
+              }, null, 2)
+            },
+          ],
+        };
+      } else if (response.status === 'error') {
+        return this.createErrorResponse(
+          `Failed to cancel targeting: ${response.message || 'Unknown error'}`,
+          [
+            'Check if the game is currently in targeting mode',
+            'Verify that the Godot instance supports the cancel_targeting command'
+          ]
+        );
+      } else {
+        return this.createErrorResponse(
+          `Received unexpected response format from Godot: ${JSON.stringify(response)}`,
+          ['Check the response format in the Godot NetworkManager']
+        );
+      }
+    } catch (error: any) {
+      return this.createErrorResponse(
+        `Failed to cancel targeting: ${error?.message || 'Unknown error'}`,
         [
           'Ensure the Godot instance is running',
           'Check if the hostname and port are correct',
