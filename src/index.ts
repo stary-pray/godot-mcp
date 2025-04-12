@@ -496,18 +496,18 @@ class GodotServer {
     if (!params || typeof params !== 'object') {
       return params;
     }
-    
+
     const result: OperationParams = {};
-    
+
     for (const key in params) {
       if (Object.prototype.hasOwnProperty.call(params, key)) {
         let normalizedKey = key;
-        
+
         // If the key is in snake_case, convert it to camelCase using our mapping
         if (key.includes('_') && this.parameterMappings[key]) {
           normalizedKey = this.parameterMappings[key];
         }
-        
+
         // Handle nested objects recursively
         if (typeof params[key] === 'object' && params[key] !== null && !Array.isArray(params[key])) {
           result[normalizedKey] = this.normalizeParameters(params[key] as OperationParams);
@@ -516,7 +516,7 @@ class GodotServer {
         }
       }
     }
-    
+
     return result;
   }
 
@@ -527,12 +527,12 @@ class GodotServer {
    */
   private convertCamelToSnakeCase(params: OperationParams): OperationParams {
     const result: OperationParams = {};
-    
+
     for (const key in params) {
       if (Object.prototype.hasOwnProperty.call(params, key)) {
         // Convert camelCase to snake_case
         const snakeKey = this.reverseParameterMappings[key] || key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-        
+
         // Handle nested objects recursively
         if (typeof params[key] === 'object' && params[key] !== null && !Array.isArray(params[key])) {
           result[snakeKey] = this.convertCamelToSnakeCase(params[key] as OperationParams);
@@ -541,7 +541,7 @@ class GodotServer {
         }
       }
     }
-    
+
     return result;
   }
 
@@ -1110,7 +1110,7 @@ class GodotServer {
   private async handleLaunchEditor(args: any) {
     // Normalize parameters to camelCase
     args = this.normalizeParameters(args);
-    
+
     if (!args.projectPath) {
       return this.createErrorResponse(
         'Project path is required',
@@ -1189,7 +1189,7 @@ class GodotServer {
   private async handleRunProject(args: any) {
     // Normalize parameters to camelCase
     args = this.normalizeParameters(args);
-    
+
     if (!args.projectPath) {
       return this.createErrorResponse(
         'Project path is required',
@@ -1403,7 +1403,7 @@ class GodotServer {
   private async handleListProjects(args: any) {
     // Normalize parameters to camelCase
     args = this.normalizeParameters(args);
-    
+
     if (!args.directory) {
       return this.createErrorResponse(
         'Directory is required',
@@ -1466,22 +1466,22 @@ class GodotServer {
 
         const scanDirectory = (currentPath: string) => {
           const entries = readdirSync(currentPath, { withFileTypes: true });
-          
+
           for (const entry of entries) {
             const entryPath = join(currentPath, entry.name);
-            
+
             // Skip hidden files and directories
             if (entry.name.startsWith('.')) {
               continue;
             }
-            
+
             if (entry.isDirectory()) {
               // Recursively scan subdirectories
               scanDirectory(entryPath);
             } else if (entry.isFile()) {
               // Count file by extension
               const ext = entry.name.split('.').pop()?.toLowerCase();
-              
+
               if (ext === 'tscn') {
                 structure.scenes++;
               } else if (ext === 'gd' || ext === 'gdscript' || ext === 'cs') {
@@ -1494,13 +1494,13 @@ class GodotServer {
             }
           }
         };
-        
+
         // Start scanning from the project root
         scanDirectory(projectPath);
         resolve(structure);
       } catch (error) {
         this.logDebug(`Error getting project structure asynchronously: ${error}`);
-        resolve({ 
+        resolve({
           error: 'Failed to get project structure',
           scenes: 0,
           scripts: 0,
@@ -1517,21 +1517,21 @@ class GodotServer {
   private async handleGetProjectInfo(args: any) {
     // Normalize parameters to camelCase
     args = this.normalizeParameters(args);
-    
+
     if (!args.projectPath) {
       return this.createErrorResponse(
         'Project path is required',
         ['Provide a valid path to a Godot project directory']
       );
     }
-  
+
     if (!this.validatePath(args.projectPath)) {
       return this.createErrorResponse(
         'Invalid project path',
         ['Provide a valid path without ".." or other potentially unsafe characters']
       );
     }
-  
+
     try {
       // Ensure godotPath is set
       if (!this.godotPath) {
@@ -1546,7 +1546,7 @@ class GodotServer {
           );
         }
       }
-  
+
       // Check if the project directory exists and contains a project.godot file
       const projectFile = join(args.projectPath, 'project.godot');
       if (!existsSync(projectFile)) {
@@ -1558,16 +1558,16 @@ class GodotServer {
           ]
         );
       }
-  
+
       this.logDebug(`Getting project info for: ${args.projectPath}`);
-  
+
       // Get Godot version
       const execOptions = { timeout: 10000 }; // 10 second timeout
       const { stdout } = await execAsync(`"${this.godotPath}" --version`, execOptions);
-  
+
       // Get project structure using the recursive method
       const projectStructure = await this.getProjectStructureAsync(args.projectPath);
-  
+
       // Extract project name from project.godot file
       let projectName = basename(args.projectPath);
       try {
@@ -1582,7 +1582,7 @@ class GodotServer {
         this.logDebug(`Error reading project file: ${error}`);
         // Continue with default project name if extraction fails
       }
-  
+
       return {
         content: [
           {
@@ -1618,7 +1618,7 @@ class GodotServer {
   private async handleCreateScene(args: any) {
     // Normalize parameters to camelCase
     args = this.normalizeParameters(args);
-    
+
     if (!args.projectPath || !args.scenePath) {
       return this.createErrorResponse(
         'Project path and scene path are required',
@@ -1692,7 +1692,7 @@ class GodotServer {
   private async handleAddNode(args: any) {
     // Normalize parameters to camelCase
     args = this.normalizeParameters(args);
-    
+
     if (!args.projectPath || !args.scenePath || !args.nodeType || !args.nodeName) {
       return this.createErrorResponse(
         'Missing required parameters',
@@ -1788,7 +1788,7 @@ class GodotServer {
   private async handleLoadSprite(args: any) {
     // Normalize parameters to camelCase
     args = this.normalizeParameters(args);
-    
+
     if (!args.projectPath || !args.scenePath || !args.nodePath || !args.texturePath) {
       return this.createErrorResponse(
         'Missing required parameters',
@@ -1892,7 +1892,7 @@ class GodotServer {
   private async handleExportMeshLibrary(args: any) {
     // Normalize parameters to camelCase
     args = this.normalizeParameters(args);
-    
+
     if (!args.projectPath || !args.scenePath || !args.outputPath) {
       return this.createErrorResponse(
         'Missing required parameters',
@@ -1987,7 +1987,7 @@ class GodotServer {
   private async handleSaveScene(args: any) {
     // Normalize parameters to camelCase
     args = this.normalizeParameters(args);
-    
+
     if (!args.projectPath || !args.scenePath) {
       return this.createErrorResponse(
         'Missing required parameters',
@@ -2086,7 +2086,7 @@ class GodotServer {
   private async handleGetUid(args: any) {
     // Normalize parameters to camelCase
     args = this.normalizeParameters(args);
-    
+
     if (!args.projectPath || !args.filePath) {
       return this.createErrorResponse(
         'Missing required parameters',
@@ -2195,7 +2195,7 @@ class GodotServer {
   private async handleUpdateProjectUids(args: any) {
     // Normalize parameters to camelCase
     args = this.normalizeParameters(args);
-    
+
     if (!args.projectPath) {
       return this.createErrorResponse(
         'Project path is required',
@@ -2295,7 +2295,7 @@ class GodotServer {
   private async handleSendRuntimeCommand(args: any) {
     // Normalize parameters to camelCase
     args = this.normalizeParameters(args);
-    
+
     if (!args.action) {
       return this.createErrorResponse(
         '缺少必需的参数',
@@ -2356,7 +2356,7 @@ class GodotServer {
   private async handleGetGameState(args: any) {
     // Normalize parameters to camelCase
     args = this.normalizeParameters(args);
-    
+
     try {
       // 创建 WebSocket 客户端
       const client = new WebSocketClient(
@@ -2376,51 +2376,13 @@ class GodotServer {
 
       // 检查响应状态
       if (response.status === 'success') {
-        // 格式化游戏状态数据以便于阅读
         const gameState = response.state;
-        const formattedState = {
-          游戏状态: {
-            是否暂停: gameState.is_paused,
-            当前天数: gameState.current_day,
-            项目健康度: gameState.project_health,
-          },
-          玩家状态: {
-            生命值: `${gameState.player.hp}/${gameState.player.max_hp}`,
-            格挡值: gameState.player.block,
-            能量: `${gameState.player.energy}/${gameState.player.max_energy}`,
-            精力: `${gameState.player.stamina}/${gameState.player.max_stamina}`,
-            压力值: gameState.player.stress,
-            状态效果: gameState.player.buffs_debuffs.map((buff: any) => 
-              `${buff.name} (${buff.stacks}层)`
-            ),
-          },
-          手牌信息: {
-            手牌数量: gameState.hand.length,
-            抽牌堆: gameState.draw_pile_count,
-            弃牌堆: gameState.discard_pile_count,
-            消耗堆: gameState.exhaust_pile_count,
-            当前选中: gameState.selected_card_entity_id,
-            目标选择模式: gameState.is_targeting,
-          },
-          敌人信息: gameState.enemies.map((enemy: any) => ({
-            名称: enemy.name,
-            生命值: `${enemy.hp}/${enemy.max_hp}`,
-            格挡值: enemy.block,
-            意图: {
-              类型: enemy.intent.type,
-              数值: enemy.intent.value,
-              目标: enemy.intent.target_id,
-              冷却: enemy.intent.cooldown_remaining,
-            },
-            状态效果: enemy.buffs_debuffs,
-          })),
-        };
 
         return {
           content: [
             {
               type: 'text',
-              text: `游戏状态获取成功：\n${JSON.stringify(formattedState, null, 2)}`,
+              text: `游戏状态获取成功：\n${JSON.stringify(gameState, null, 2)}`,
             },
           ],
         };
