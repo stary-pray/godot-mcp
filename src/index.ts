@@ -82,18 +82,20 @@ class WebSocketClient {
       this.ws = new WebSocket(wsUrl);
       let responseReceived = false;
 
+      // 构建消息体 - 在函数开始就创建，以便在错误处理中使用
+      const messageBody = { action, parameters: parameters || {} };
+      const message = JSON.stringify(messageBody);
+
       // 设置超时
       const timeout = setTimeout(() => {
         if (!responseReceived) {
           this.ws?.terminate();
-          reject(new Error(`连接到 ${wsUrl} 的 WebSocket 请求超时 (5秒)`));
+          reject(new Error(`连接到 ${wsUrl} 的 WebSocket 请求超时 (5秒)。尝试发送的命令: ${JSON.stringify(messageBody)}`));
         }
       }, 5000);
 
       this.ws.on('open', () => {
-        // 构建消息体
-        const messageBody = { action, parameters: parameters || {} };
-        const message = JSON.stringify(messageBody);
+        // 发送消息
         this.ws?.send(message);
       });
 
@@ -106,20 +108,20 @@ class WebSocketClient {
           resolve(response);
         } catch (error) {
           this.ws?.close();
-          reject(new Error(`解析来自 Godot 的 JSON 响应失败: ${data.toString()}`));
+          reject(new Error(`解析来自 Godot 的 JSON 响应失败: ${data.toString()}。尝试发送的命令: ${JSON.stringify(messageBody)}`));
         }
       });
 
       this.ws.on('error', (error) => {
         clearTimeout(timeout);
         this.ws?.close();
-        reject(new Error(`WebSocket 错误: ${error.message}`));
+        reject(new Error(`WebSocket 错误: ${error.message}。尝试发送的命令: ${JSON.stringify(messageBody)}`));
       });
 
       this.ws.on('close', (code, reason) => {
         if (!responseReceived) {
           clearTimeout(timeout);
-          reject(new Error(`WebSocket 连接在收到响应前意外关闭 (代码: ${code})`));
+          reject(new Error(`WebSocket 连接在收到响应前意外关闭 (代码: ${code})。尝试发送的命令: ${JSON.stringify(messageBody)}`));
         }
       });
     });
@@ -1002,7 +1004,7 @@ class GodotServer {
         },
         {
           name: 'mcp_godot_send_runtime_command',
-          description: '向运行中的 Godot 游戏实例发送运行时控制指令',
+          description: '向运行中的 Godot 游戏实例发送运行时控制指令。所有命令参数必须嵌套在 parameters 对象中。',
           inputSchema: {
             type: 'object',
             required: ['action'],
@@ -1027,7 +1029,7 @@ class GodotServer {
               },
               parameters: {
                 type: 'object',
-                description: '包含操作所需参数的 JSON 对象',
+                description: '包含操作所需参数的 JSON 对象。所有实体ID参数均使用 *_entity_id 格式：\n- 卡牌选择：使用 card_entity_id （而非 card_id）\n- 目标选择：使用 target_entity_id （而非 target_id）\n- 奖励选择：使用 reward_entity_id （而非 reward_id）\n例如：{"card_entity_id": 9} 用于选择实体ID为9的卡牌。',
                 additionalProperties: true,
               },
             },
@@ -2438,7 +2440,13 @@ class GodotServer {
           [
             '检查发送的参数是否正确',
             '确认 yuki-godot 中的游戏状态是否允许此操作',
-            '查看 README_Websocket_Interface.md 了解支持的指令'
+            '查看 README_Websocket_Interface.md 了解支持的指令',
+            `所有实体ID参数均使用 *_entity_id 格式：`,
+            `- 卡牌选择：使用 card_entity_id （而非 card_id）`,
+            `- 目标选择：使用 target_entity_id （而非 target_id）`,
+            `- 奖励选择：使用 reward_entity_id （而非 reward_id）`,
+            `例如: {"parameters": {"card_entity_id": 9}}`,
+            `如果错误消息提示缺少参数，请确保参数嵌套在 parameters 对象中`
           ]
         );
       } else {
@@ -2453,7 +2461,13 @@ class GodotServer {
         [
           '确认 yuki-godot 实例正在运行',
           '检查主机名和端口是否正确',
-          '确认 WebSocket 服务器已启动'
+          '确认 WebSocket 服务器已启动',
+          `所有实体ID参数均使用 *_entity_id 格式：`,
+          `- 卡牌选择：使用 card_entity_id （而非 card_id）`,
+          `- 目标选择：使用 target_entity_id （而非 target_id）`,
+          `- 奖励选择：使用 reward_entity_id （而非 reward_id）`,
+          `例如: {"parameters": {"card_entity_id": 9}}`,
+          `确保所有参数均嵌套在 parameters 对象中`
         ]
       );
     }
