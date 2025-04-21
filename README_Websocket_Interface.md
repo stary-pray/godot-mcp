@@ -1,6 +1,6 @@
 ## Godot WebSocket 控制接口文档
 
-**版本:** 1.4
+**版本:** 1.5
 **最后更新:** 2025-04-21
 
 ### 1. 概述
@@ -86,7 +86,7 @@
 | `get_game_state`    | 获取当前游戏的详细状态。                 | `pause_game`: Boolean (可选，默认 false) - 如果为 true，在收集状态前暂停游戏 | :white_check_mark: 可用。返回包含游戏状态的 JSON 对象。 |
 | `get_available_actions` | 获取当前可用的所有玩家操作及其参数。 | 无 | :white_check_mark: 可用。返回包含所有可用操作的数组。 |
 | `get_scene_tree`    | 获取场景树节点结构和基本属性的结构化数据。 | `start_node_path`: String (可选, 默认为根节点), `max_depth`: int (可选, 默认-1表示无限深度) | :white_check_mark: 可用。返回包含树结构数据的 JSON 对象 (`data` 字段)。 |
-| `get_screenshot`    | 获取当前游戏画面的截图。                 | `format`: String (可选, 默认 "jpg") - 截图格式，支持 "png" 或 "jpg"<br>`quality`: int (可选, 默认 75) - 仅当 format 为 "jpg" 时有效，范围 0-100<br>`encode`: String (可选, 默认 "base64") - 编码方式，目前仅支持 "base64" | :white_check_mark: 可用。返回 Base64 编码的图像数据。 |
+| `get_screenshot`    | 获取当前游戏画面的截图。                 | `format`: String (可选, 默认 "png") - 截图格式，支持 "png" 或 "jpg"<br>`quality`: int (可选, 默认 75) - 仅当 format 为 "jpg" 时有效，范围 0-100<br>`save_dir`: String (可选, 默认 "screenshots/") - 相对于 user:// 的保存目录<br>`filename`: String (可选, 默认使用时间戳) - 不含扩展名的文件名 | :white_check_mark: 可用。返回保存后的截图文件绝对路径。 |
 
 **关于实体 ID (`card_entity_id`, `target_entity_id`, `reward_entity_id`):**
 
@@ -339,25 +339,30 @@
 
 ### 11. `get_screenshot` 响应结构
 
-`get_screenshot` 命令的成功响应包含 Base64 编码的图像数据：
+`get_screenshot` 命令的成功响应包含保存后的截图文件绝对路径：
 
 ```json
 {
   "status": "success",
-  "message": "截图获取成功",
+  "message": "截图已保存",
   "data": {
-    "format": "jpg",  // 或 "png"，取决于请求参数
-    "encoding": "base64",
-    "image_data": "..." // Base64 编码的图像数据字符串
+    "format": "png",  // 或 "jpg"，取决于请求参数
+    "absolute_path": "/Users/username/Library/Application Support/Godot/app_userdata/YourGameName/screenshots/screenshot_20240421_123045.png"
   }
 }
 ```
 
+**请求参数说明：**
+
+* `format` (String, 可选): 截图格式，支持 "png" (默认) 或 "jpg"
+* `quality` (int, 可选): 仅当 `format` 为 "jpg" 时有效，范围 0-100，表示 JPG 压缩质量 (默认 75)
+* `save_dir` (String, 可选): **相对**于 `user://` 目录的子目录路径，用于保存截图。如果省略，使用默认值 `"screenshots/"`
+* `filename` (String, 可选): 指定的文件名（**不包含扩展名**）。如果省略，系统会自动生成一个基于时间戳的文件名
+
 **响应数据字段说明：**
 
 * `format`: 图像格式，"jpg" 或 "png"
-* `encoding`: 编码方式，目前仅支持 "base64"
-* `image_data`: Base64 编码的图像数据，可以直接用于 HTML `<img>` 标签的 src 属性（需添加前缀 "data:image/jpeg;base64,"或"data:image/png;base64,"）
+* `absolute_path`: 保存的截图文件在系统中的绝对路径，可以直接用于文件读取或显示
 
 **错误响应示例：**
 
@@ -368,8 +373,20 @@
 }
 ```
 
-**注意事项：**
+或
 
-* 根据游戏图像质量和分辨率，返回的 Base64 字符串可能较大，特别是使用 PNG 格式时。
-* JPEG 格式提供更小的文件大小，但有损压缩；PNG 提供无损压缩但文件较大。
-* 可以通过 `quality` 参数调整 JPEG 压缩质量，平衡大小和质量。
+```json
+{
+  "status": "error",
+  "message": "保存截图文件失败: user://screenshots/my_screenshot.png (Error: 2)"
+}
+```
+
+**重要注意事项：**
+
+* 此 action 将截图**保存到文件系统**而不是通过 WebSocket 发送 Base64 编码数据。
+* 客户端必须能够访问返回的文件路径才能读取截图文件，这意味着客户端和 Godot 游戏必须在**同一台机器**上运行或**共享文件系统**。
+* 截图将被保存到 Godot 的用户数据目录（`user://`）下的指定子目录中。在不同操作系统中，此目录通常位于：
+  * **Windows**: `%APPDATA%\Godot\app_userdata\[项目名]`
+  * **macOS**: `~/Library/Application Support/Godot/app_userdata/[项目名]`
+  * **Linux**: `~/.local/share/godot/app_userdata/[项目名]`

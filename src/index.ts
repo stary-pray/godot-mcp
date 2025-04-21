@@ -103,6 +103,9 @@ class WebSocketClient {
         responseReceived = true;
         clearTimeout(timeout);
         try {
+          // 添加调试日志，查看原始响应数据
+          console.log(`[DEBUG] Raw WebSocket response: ${data.toString()}`);
+
           const response = JSON.parse(data.toString());
           this.ws?.close();
           resolve(response);
@@ -175,7 +178,9 @@ class GodotServer {
     'parameters': 'parameters',
     'pause_game': 'pauseGame',
     'start_node_path': 'startNodePath',
-    'max_depth': 'maxDepth'
+    'max_depth': 'maxDepth',
+    'save_dir': 'saveDir',
+    'filename': 'filename'
   };
 
   /**
@@ -1127,6 +1132,48 @@ class GodotServer {
             },
           },
         },
+        {
+          name: 'get_screenshot',
+          description: '获取当前游戏画面的截图，将其保存到本地文件，并返回文件的绝对路径。',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              host: {
+                type: 'string',
+                description: 'Hostname or IP of the running Godot instance',
+                default: 'localhost',
+              },
+              port: {
+                type: 'integer',
+                description: 'WebSocket port of the running Godot instance',
+                default: 9080,
+              },
+              format: {
+                type: 'string',
+                description: '截图格式，支持 "png" 或 "jpg"',
+                default: 'png',
+                enum: ['jpg', 'png']
+              },
+              quality: {
+                type: 'integer',
+                description: '仅当 format 为 "jpg" 时有效，范围 0-100',
+                default: 75,
+                minimum: 0,
+                maximum: 100
+              },
+              saveDir: {
+                type: 'string',
+                description: '相对于 Godot `user://` 的保存目录',
+                default: 'screenshots/'
+              },
+              filename: {
+                type: 'string',
+                description: '不含扩展名的文件名 (若省略，Godot 会生成时间戳文件名)'
+              }
+            },
+            required: [],
+          },
+        },
       ],
     }));
 
@@ -1168,6 +1215,8 @@ class GodotServer {
           return await this.handleGetGameState(request.params.arguments);
         case 'get_scene_tree':
           return await this.handleGetSceneTree(request.params.arguments);
+        case 'get_screenshot':
+          return await this.handleGetScreenshot(request.params.arguments);
         case 'get_available_actions':
           return await this.handleGetAvailableActions(request.params.arguments);
         case 'cancel_targeting':
@@ -2499,7 +2548,7 @@ class GodotServer {
 
       // 检查响应状态
       if (response.status === 'success') {
-        // 直接传递游戏返回的数据，不做特定字段的假设
+        // 直接传递游戏返回的数据，但只使用 response.data 作为 data 字段
         return {
           content: [
             {
@@ -2507,7 +2556,7 @@ class GodotServer {
               text: JSON.stringify({
                 status: "success",
                 message: "游戏状态获取成功",
-                data: response  // 返回完整的响应，而不仅仅是 response.state
+                data: response.data  // 只返回 response.data，而不是整个 response
               }, null, 2)
             },
           ],
@@ -2576,9 +2625,11 @@ class GodotServer {
               // Stringify the entire structured data for the AI
               text: JSON.stringify({
                 status: "success",
-                message: "Scene tree data retrieved.",
-                // Embed the actual tree data received from Godot
-                sceneTree: response.data
+                message: "Scene tree data retrieved successfully.",
+                // Include the original command response
+                command_response: response.command_response,
+                // Embed the actual tree data received from Godot in the data field
+                data: response.data
               }, null, 2)
             },
           ],
@@ -2660,6 +2711,119 @@ class GodotServer {
           'Ensure the Godot instance is running',
           'Check if the hostname and port are correct',
           'Verify that the WebSocket server is started'
+        ]
+      );
+    }
+  }
+
+  /**
+   * Handle the get_screenshot tool
+   */
+  private async handleGetScreenshot(args: any) {
+    // 打印原始参数
+    console.log('[DEBUG] get_screenshot original args:', JSON.stringify(args, null, 2));
+
+    // Normalize parameters to camelCase
+    args = this.normalizeParameters(args);
+
+    // 打印标准化后的参数
+    console.log('[DEBUG] get_screenshot normalized args:', JSON.stringify(args, null, 2));
+
+    try {
+      // Create WebSocket client
+      const client = new WebSocketClient(
+        args.host || 'localhost',
+        args.port || 9080
+      );
+
+      // Prepare parameters for Godot
+      // Ensure we use snake_case for parameters sent to Godot
+      const godotParams: any = {};
+      if (args.format !== undefined) {
+        godotParams.format = args.format;
+      }
+      if (args.quality !== undefined) {
+        godotParams.quality = args.quality;
+      }
+      if (args.saveDir !== undefined) {
+        godotParams.save_dir = args.saveDir;
+      }
+      if (args.filename !== undefined) {
+        godotParams.filename = args.filename;
+      }
+
+      // 打印发送给 Godot 的参数
+      console.log('[DEBUG] Sending to Godot:', JSON.stringify({
+        action: 'get_screenshot',
+        parameters: godotParams
+      }, null, 2));
+
+      // Send command and wait for response
+      const response = await client.sendCommand('get_screenshot', godotParams);
+
+      // 添加调试日志
+      console.log('[DEBUG] get_screenshot response:', JSON.stringify(response, null, 2));
+      console.log('[DEBUG] response.data type:', typeof response.data);
+      console.log('[DEBUG] response.data:', JSON.stringify(response.data, null, 2));
+      console.log('[DEBUG] response.data.absolute_path:', response.data ? response.data.absolute_path : 'undefined');
+
+      // Check response status
+      if (response.status === 'success') {
+        // 使用硬编码的响应格式
+        console.log('[DEBUG] Using hardcoded response format');
+
+        // 构造响应对象，使用 Godot 返回的数据
+        const responseObj = {
+          status: "success",
+          message: "截图已保存",
+          data: {
+            format: response.data.format,
+            absolute_path: response.data.absolute_path
+          }
+        };
+
+        console.log('[DEBUG] Response object:', JSON.stringify(responseObj, null, 2));
+
+        // 将响应对象转换为 JSON 字符串
+        const responseJson = JSON.stringify(responseObj, null, 2);
+        console.log('[DEBUG] Response JSON string:', responseJson);
+
+        // 返回响应对象
+        console.log('[DEBUG] Returning response object');
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: responseJson
+            },
+          ],
+        };
+      } else if (response.status === 'error') {
+        return this.createErrorResponse(
+          `Failed to get screenshot from Godot: ${response.message || 'Unknown error'}`,
+          [
+            'Check if the parameters are correct',
+            'Verify that the Godot instance supports the get_screenshot command',
+            'Check if the format parameter is valid ("jpg" or "png")',
+            'For "jpg" format, ensure quality is between 0-100',
+            'Ensure the save_dir path is valid and writable'
+          ]
+        );
+      } else {
+        return this.createErrorResponse(
+          `Received unexpected response format from Godot: ${JSON.stringify(response)}`,
+          ['Check the response format in the Godot NetworkManager']
+        );
+      }
+    } catch (error: any) {
+      return this.createErrorResponse(
+        `Failed to get screenshot: ${error?.message || 'Unknown error'}`,
+        [
+          'Ensure the Godot instance is running',
+          'Check if the hostname and port are correct',
+          'Verify that the WebSocket server is started',
+          'Ensure the Node.js process has access to the Godot user:// directory'
         ]
       );
     }
